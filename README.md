@@ -27,7 +27,7 @@ A comprehensive Pine Script v4 indicator that detects RSI divergences and provid
 - **🟡 Yellow bars**: Long entry signals
 - **🟣 Purple bars**: Long exit signals  
 - **🔵 Blue bars**: Active long position
-- **Labels**: "Bull", "H Bull", "Bear", "H Bear" mark divergences
+- **Labels**: "PD", "PRD", "ND", "NRD" mark divergences
 
 ## ⚠️ Disclaimer
 

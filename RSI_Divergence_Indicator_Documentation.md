@@ -84,7 +84,7 @@ Triggered when both conditions are met:
 - **Yellow bars**: New long entry opportunity
 - **Blue bars**: Currently in a long position
 - **Purple bars**: Exit signal triggered
-- **Labels**: "Bull", "H Bull", "Bear", "H Bear" mark divergence points
+- **Labels**: "PD", "PRD", "ND", "NRD" mark divergence points
 
 ## Technical Details
 
@@ -108,6 +108,12 @@ Uses `var` declaration for `longPos` to maintain position state across bars with
 - **Pine Script Version**: v4
 - **License**: Mozilla Public License 2.0
 - **Author**: © mohanee
+
+## Label Meanings
+- **PD**: Regular Bullish Divergence (Price Lower Low, RSI Higher Low)
+- **ND**: Regular Bearish Divergence (Price Higher High, RSI Lower High)
+- **PRD**: Hidden Bullish Divergence (Price Higher Low, RSI Lower Low)
+- **NRD**: Hidden Bearish Divergence (Price Lower High, RSI Higher High)
 
 ## Customization Options
 The code includes several commented sections that can be uncommented for additional features:
