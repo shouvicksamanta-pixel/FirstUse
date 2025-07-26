@@ -1,0 +1,153 @@
+//@version=5
+indicator(title="RSI Divergence Indicator v5", shorttitle="RSI Div v5", overlay=false)
+
+// Input parameters
+len = input.int(title="RSI Period", minval=1, defval=9)
+src = input.source(title="RSI Source", defval=close)
+lbR = input.int(title="Pivot Lookback Right", defval=3)
+lbL = input.int(title="Pivot Lookback Left", defval=1)
+rangeUpper = input.int(title="Max of Lookback Range", defval=60)
+rangeLower = input.int(title="Min of Lookback Range", defval=5)
+
+// Plot options
+plotBull = input.bool(title="Plot Bullish", defval=true)
+plotHiddenBull = input.bool(title="Plot Hidden Bullish", defval=true)
+plotBear = input.bool(title="Plot Bearish", defval=true)
+plotHiddenBear = input.bool(title="Plot Hidden Bearish", defval=false)
+showRSIValues = input.bool(title="Show RSI Values at Divergences", defval=true)
+
+// Color definitions
+bearColor = color.purple
+bullColor = color.green
+hiddenBullColor = color.new(color.green, 80)
+hiddenBearColor = color.new(color.red, 80)
+textColor = color.white
+
+// Calculate RSI
+osc = ta.rsi(src, len)
+
+// Plot RSI and levels
+plot(osc, title="RSI", linewidth=2, color=#8D1699)
+hline(50, title="Middle Line", linestyle=hline.style_dotted)
+obLevel = hline(70, title="Overbought", linestyle=hline.style_dotted)
+osLevel = hline(30, title="Oversold", linestyle=hline.style_dotted)
+fill(obLevel, osLevel, title="Background", color=color.new(#9915FF, 90))
+
+// Pivot detection
+plFound = ta.pivotlow(osc, lbL, lbR)
+phFound = ta.pivothigh(osc, lbL, lbR)
+
+// Helper function to check if condition is within range
+_inRange(cond) =>
+    bars = ta.barssince(cond)
+    rangeLower <= bars and bars <= rangeUpper
+
+// Get current RSI value at pivot
+currentRSI = osc[lbR]
+
+// Regular Bullish Divergence
+bullishCondition = false
+if not na(plFound)
+    prevPivotLow = ta.valuewhen(not na(plFound), osc[lbR], 1)
+    prevPriceLow = ta.valuewhen(not na(plFound), low[lbR], 1)
+    
+    if not na(prevPivotLow) and not na(prevPriceLow)
+        oscHL = currentRSI > prevPivotLow
+        priceLL = low[lbR] < prevPriceLow
+        rangeOK = _inRange(ta.valuewhen(not na(plFound), bar_index, 1))
+        bullishCondition := plotBull and priceLL and oscHL and rangeOK
+
+// Hidden Bullish Divergence
+hiddenBullishCondition = false
+if not na(plFound)
+    prevPivotLow = ta.valuewhen(not na(plFound), osc[lbR], 1)
+    prevPriceLow = ta.valuewhen(not na(plFound), low[lbR], 1)
+    
+    if not na(prevPivotLow) and not na(prevPriceLow)
+        oscLL = currentRSI < prevPivotLow
+        priceHL = low[lbR] > prevPriceLow
+        rangeOK = _inRange(ta.valuewhen(not na(plFound), bar_index, 1))
+        hiddenBullishCondition := plotHiddenBull and priceHL and oscLL and rangeOK
+
+// Regular Bearish Divergence
+bearishCondition = false
+if not na(phFound)
+    prevPivotHigh = ta.valuewhen(not na(phFound), osc[lbR], 1)
+    prevPriceHigh = ta.valuewhen(not na(phFound), high[lbR], 1)
+    
+    if not na(prevPivotHigh) and not na(prevPriceHigh)
+        oscLH = currentRSI < prevPivotHigh
+        priceHH = high[lbR] > prevPriceHigh
+        rangeOK = _inRange(ta.valuewhen(not na(phFound), bar_index, 1))
+        bearishCondition := plotBear and priceHH and oscLH and rangeOK
+
+// Hidden Bearish Divergence
+hiddenBearishCondition = false
+if not na(phFound)
+    prevPivotHigh = ta.valuewhen(not na(phFound), osc[lbR], 1)
+    prevPriceHigh = ta.valuewhen(not na(phFound), high[lbR], 1)
+    
+    if not na(prevPivotHigh) and not na(prevPriceHigh)
+        oscHH = currentRSI > prevPivotHigh
+        priceLH = high[lbR] < prevPriceHigh
+        rangeOK = _inRange(ta.valuewhen(not na(phFound), bar_index, 1))
+        hiddenBearishCondition := plotHiddenBear and priceLH and oscHH and rangeOK
+
+// Plot divergence labels
+if bullishCondition
+    label.new(bar_index - lbR, currentRSI, 
+              text = showRSIValues ? "Bull\n" + str.tostring(math.round(currentRSI, 1)) : "Bull", 
+              style = label.style_label_up, 
+              color = bullColor, 
+              textcolor = textColor, 
+              size = size.small)
+
+if hiddenBullishCondition
+    label.new(bar_index - lbR, currentRSI, 
+              text = showRSIValues ? "H Bull\n" + str.tostring(math.round(currentRSI, 1)) : "H Bull", 
+              style = label.style_label_up, 
+              color = hiddenBullColor, 
+              textcolor = textColor, 
+              size = size.small)
+
+if bearishCondition
+    label.new(bar_index - lbR, currentRSI, 
+              text = showRSIValues ? "Bear\n" + str.tostring(math.round(currentRSI, 1)) : "Bear", 
+              style = label.style_label_down, 
+              color = bearColor, 
+              textcolor = textColor, 
+              size = size.small)
+
+if hiddenBearishCondition
+    label.new(bar_index - lbR, currentRSI, 
+              text = showRSIValues ? "H Bear\n" + str.tostring(math.round(currentRSI, 1)) : "H Bear", 
+              style = label.style_label_down, 
+              color = hiddenBearColor, 
+              textcolor = textColor, 
+              size = size.small)
+
+// Plot signals for alerting
+plotshape(bullishCondition, title="Regular Bullish Signal", style=shape.triangleup, location=location.bottom, color=color.new(bullColor, 100), size=size.tiny)
+plotshape(hiddenBullishCondition, title="Hidden Bullish Signal", style=shape.triangleup, location=location.bottom, color=color.new(hiddenBullColor, 100), size=size.tiny)
+plotshape(bearishCondition, title="Regular Bearish Signal", style=shape.triangledown, location=location.top, color=color.new(bearColor, 100), size=size.tiny)
+plotshape(hiddenBearishCondition, title="Hidden Bearish Signal", style=shape.triangledown, location=location.top, color=color.new(hiddenBearColor, 100), size=size.tiny)
+
+// Alert conditions
+alertcondition(bullishCondition, title="Regular Bullish Divergence", message="Regular Bullish RSI Divergence detected")
+alertcondition(hiddenBullishCondition, title="Hidden Bullish Divergence", message="Hidden Bullish RSI Divergence detected")
+alertcondition(bearishCondition, title="Regular Bearish Divergence", message="Regular Bearish RSI Divergence detected")
+alertcondition(hiddenBearishCondition, title="Hidden Bearish Divergence", message="Hidden Bearish RSI Divergence detected")
+
+// Table to display current RSI value and divergence status
+if barstate.islast
+    var infoTable = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80), border_width=1)
+    table.cell(infoTable, 0, 0, "RSI Value", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, str.tostring(math.round(osc, 2)), text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "Bull Div", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, bullishCondition ? "✓" : "✗", text_color=bullishCondition ? bullColor : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 2, "H Bull Div", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, hiddenBullishCondition ? "✓" : "✗", text_color=hiddenBullishCondition ? bullColor : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 3, "Bear Div", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, bearishCondition ? "✓" : "✗", text_color=bearishCondition ? bearColor : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 4, "H Bear Div", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 4, hiddenBearishCondition ? "✓" : "✗", text_color=hiddenBearishCondition ? bearColor : color.gray, text_size=size.small)
