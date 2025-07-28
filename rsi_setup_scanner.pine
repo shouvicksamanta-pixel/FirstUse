@@ -1,0 +1,178 @@
+//@version=6
+indicator("RSI Setup Scanner", overlay=true, max_labels_count=500, max_lines_count=500)
+
+// Input parameters
+rsi_length = input.int(25, title="RSI Length", minval=1)
+rsi_oversold = input.int(30, title="RSI Oversold Level", minval=1, maxval=50)
+lookback_bars = input.int(4, title="Lookback Bars for Base-1", minval=1, maxval=10)
+show_lines = input.bool(true, title="Show Stop Loss & Target Lines")
+line_extend = input.int(10, title="Line Extension (bars)", minval=5, maxval=50)
+
+// Calculate RSI
+rsi = ta.rsi(close, rsi_length)
+
+// Define candle colors
+is_red_candle = close < open
+is_green_candle = close > open
+
+// Function to find the most recent green candle in lookback period
+find_recent_green_candle(lookback_period, base_index) =>
+    found = false
+    green_candle_high = 0.0
+    green_candle_index = 0
+    
+    // Look back from the bar before the base candle
+    for i = 1 to lookback_period
+        check_index = base_index - i
+        if check_index >= 0 and close[base_index - check_index] > open[base_index - check_index]
+            found := true
+            green_candle_high := high[base_index - check_index]
+            green_candle_index := check_index
+            break
+    
+    [found, green_candle_high, green_candle_index]
+
+// Arrays to store setup information
+var array<int> base_indices = array.new<int>()
+var array<int> base_minus_one_indices = array.new<int>()
+var array<int> buy_indices = array.new<int>()
+var array<float> base_lows = array.new<float>()
+var array<float> base_minus_one_highs = array.new<float>()
+var array<float> buy_prices = array.new<float>()
+
+// Variables to track current setup state
+var int current_base_index = na
+var float current_base_low = na
+var float current_base_minus_one_high = na
+var int current_base_minus_one_index = na
+var bool waiting_for_trigger = false
+
+// Main scanning logic
+if barstate.isconfirmed
+    // Check for new Base candle
+    if is_red_candle and rsi < rsi_oversold and not waiting_for_trigger
+        // Look for Base-1 candle in the previous 4 bars
+        [found_green, green_high, green_index] = find_recent_green_candle(lookback_bars, 0)
+        
+        if found_green
+            // Store the setup information
+            current_base_index := bar_index
+            current_base_low := low
+            current_base_minus_one_high := green_high
+            current_base_minus_one_index := bar_index - (green_index + 1)
+            waiting_for_trigger := true
+            
+            // Add to arrays for historical tracking
+            array.push(base_indices, bar_index)
+            array.push(base_lows, low)
+            array.push(base_minus_one_indices, current_base_minus_one_index)
+            array.push(base_minus_one_highs, green_high)
+            
+            // Create Base label
+            label.new(bar_index, high + (high - low) * 0.1, "BASE\nRSI: " + str.tostring(rsi, "#.#"), 
+                     color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+            
+            // Create Base-1 label (on the historical bar)
+            if bar_index >= current_base_minus_one_index
+                label.new(current_base_minus_one_index, high[bar_index - current_base_minus_one_index] + (high[bar_index - current_base_minus_one_index] - low[bar_index - current_base_minus_one_index]) * 0.1, 
+                         "BASE-1\nHigh: " + str.tostring(green_high, "#.##"), 
+                         color=color.green, style=label.style_label_down, textcolor=color.white, size=size.small)
+    
+    // Check for Buy trigger
+    if waiting_for_trigger and is_green_candle and close > current_base_minus_one_high
+        // This green candle closes above Base-1 high, so next candle is Buy signal
+        waiting_for_trigger := false
+        
+        // Store buy information (for next candle)
+        buy_index = bar_index + 1
+        entry_price = close
+        stop_loss = current_base_low
+        target_price = entry_price + 2 * (entry_price - stop_loss)
+        
+        // Add to arrays
+        array.push(buy_indices, buy_index)
+        array.push(buy_prices, entry_price)
+        
+        // Note: Labels and lines will be drawn on the next bar
+
+// Draw Buy labels and lines on the appropriate bars
+if barstate.isconfirmed and array.size(buy_indices) > 0
+    // Check if current bar is a buy signal bar
+    for i = 0 to array.size(buy_indices) - 1
+        buy_bar_index = array.get(buy_indices, i)
+        if bar_index == buy_bar_index
+            entry_price = array.get(buy_prices, i)
+            stop_loss = array.get(base_lows, i)
+            target_price = entry_price + 2 * (entry_price - stop_loss)
+            
+            // Create Buy label
+            label.new(bar_index, low - (high - low) * 0.1, "BUY\nEntry: " + str.tostring(entry_price, "#.##") + "\nSL: " + str.tostring(stop_loss, "#.##") + "\nTarget: " + str.tostring(target_price, "#.##"), 
+                     color=color.blue, style=label.style_label_up, textcolor=color.white, size=size.small)
+            
+            // Draw stop loss and target lines if enabled
+            if show_lines
+                // Stop Loss line (red)
+                line.new(bar_index, stop_loss, bar_index + line_extend, stop_loss, 
+                        color=color.red, style=line.style_dashed, width=2)
+                
+                // Target line (green)
+                line.new(bar_index, target_price, bar_index + line_extend, target_price, 
+                        color=color.green, style=line.style_dashed, width=2)
+                
+                // Entry reference line (blue, dotted)
+                line.new(bar_index, entry_price, bar_index + line_extend, entry_price, 
+                        color=color.blue, style=line.style_dotted, width=1)
+
+// Plot RSI for reference (in separate pane)
+rsi_plot = plot(rsi, "RSI", color=color.blue)
+hline(rsi_oversold, "RSI Oversold", color=color.red, linestyle=hline.style_dashed)
+hline(70, "RSI Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(50, "RSI Midline", color=color.gray, linestyle=hline.style_dotted)
+
+// Fill oversold area
+oversold_fill = hline(0, "RSI Zero", color=color.new(color.white, 100))
+fill(oversold_fill, hline(rsi_oversold), color=color.new(color.red, 90), title="Oversold Zone")
+
+// Color current bar based on setup state
+barcolor(waiting_for_trigger ? color.yellow : na, title="Waiting for Trigger")
+
+// Information table
+var table info_table = table.new(position.top_right, 2, 6, bgcolor=color.white, border_width=1)
+
+if barstate.islast
+    total_setups = array.size(base_indices)
+    total_buys = array.size(buy_indices)
+    
+    table.cell(info_table, 0, 0, "Setup Scanner", text_color=color.white, bgcolor=color.blue)
+    table.cell(info_table, 1, 0, "Statistics", text_color=color.white, bgcolor=color.blue)
+    
+    table.cell(info_table, 0, 1, "RSI Length", text_color=color.black)
+    table.cell(info_table, 1, 1, str.tostring(rsi_length), text_color=color.black)
+    
+    table.cell(info_table, 0, 2, "RSI Level", text_color=color.black)
+    table.cell(info_table, 1, 2, str.tostring(rsi_oversold), text_color=color.black)
+    
+    table.cell(info_table, 0, 3, "Total Setups", text_color=color.black)
+    table.cell(info_table, 1, 3, str.tostring(total_setups), text_color=color.black)
+    
+    table.cell(info_table, 0, 4, "Total Triggers", text_color=color.black)
+    table.cell(info_table, 1, 4, str.tostring(total_buys), text_color=color.black)
+    
+    table.cell(info_table, 0, 5, "Current RSI", text_color=color.black)
+    table.cell(info_table, 1, 5, str.tostring(rsi, "#.#"), text_color=rsi < rsi_oversold ? color.red : color.black)
+
+// Alert conditions for new setups
+alertcondition(is_red_candle and rsi < rsi_oversold and not waiting_for_trigger[1], 
+               title="New Base Setup", message="RSI Setup Scanner - New Base candle found")
+
+alertcondition(waiting_for_trigger and is_green_candle and close > current_base_minus_one_high, 
+               title="Buy Trigger", message="RSI Setup Scanner - Buy trigger activated")
+
+// Plot shapes for quick visual identification
+plotshape(is_red_candle and rsi < rsi_oversold and not waiting_for_trigger[1], 
+          title="Base Candle", location=location.abovebar, color=color.red, 
+          style=shape.triangledown, size=size.small)
+
+plotshape(waiting_for_trigger and is_green_candle and close > current_base_minus_one_high, 
+          title="Trigger Candle", location=location.belowbar, color=color.orange, 
+          style=shape.triangleup, size=size.small)
