@@ -1,0 +1,201 @@
+//@version=5
+indicator(title="RSI Divergence Complete", shorttitle="RSI Div Complete", overlay=false)
+
+// Input parameters
+len = input.int(title="RSI Period", minval=1, defval=14)
+src = input.source(title="RSI Source", defval=close)
+lbR = input.int(title="Pivot Lookback Right", defval=5)
+lbL = input.int(title="Pivot Lookback Left", defval=5)
+rangeUpper = input.int(title="Max of Lookback Range", defval=60)
+rangeLower = input.int(title="Min of Lookback Range", defval=5)
+
+// Plot options
+plotBull = input.bool(title="Plot Bullish (PD)", defval=true)
+plotHiddenBull = input.bool(title="Plot Hidden Bullish (PRD)", defval=true)
+plotBear = input.bool(title="Plot Bearish (ND)", defval=true)
+plotHiddenBear = input.bool(title="Plot Hidden Bearish (NRD)", defval=true)
+showRSIValues = input.bool(title="Show RSI Values", defval=true)
+showPriceLines = input.bool(title="Show Price Reference Lines", defval=true)
+
+// Calculate RSI
+osc = ta.rsi(src, len)
+
+// Plot RSI and levels
+plot(osc, title="RSI", linewidth=2, color=#2962FF)
+hline(50, title="Middle Line", linestyle=hline.style_dotted, color=color.gray)
+obLevel = hline(70, title="Overbought", linestyle=hline.style_dotted, color=color.red)
+osLevel = hline(30, title="Oversold", linestyle=hline.style_dotted, color=color.green)
+fill(obLevel, osLevel, title="Background", color=color.new(color.blue, 95))
+
+// Pivot detection on RSI
+plFound = ta.pivotlow(osc, lbL, lbR)
+phFound = ta.pivothigh(osc, lbL, lbR)
+
+// Function to check if bars are within range
+inRange(bars) =>
+    rangeLower <= bars and bars <= rangeUpper
+
+// Store pivot information
+var pivotLows = array.new<float>()
+var pivotLowsRSI = array.new<float>()
+var pivotLowsBars = array.new<int>()
+
+var pivotHighs = array.new<float>()
+var pivotHighsRSI = array.new<float>()
+var pivotHighsBars = array.new<int>()
+
+// Add new pivot lows
+if not na(plFound)
+    array.push(pivotLows, low[lbR])
+    array.push(pivotLowsRSI, osc[lbR])
+    array.push(pivotLowsBars, bar_index - lbR)
+    
+    // Keep only recent pivots
+    if array.size(pivotLows) > 10
+        array.shift(pivotLows)
+        array.shift(pivotLowsRSI)
+        array.shift(pivotLowsBars)
+
+// Add new pivot highs
+if not na(phFound)
+    array.push(pivotHighs, high[lbR])
+    array.push(pivotHighsRSI, osc[lbR])
+    array.push(pivotHighsBars, bar_index - lbR)
+    
+    // Keep only recent pivots
+    if array.size(pivotHighs) > 10
+        array.shift(pivotHighs)
+        array.shift(pivotHighsRSI)
+        array.shift(pivotHighsBars)
+
+// Check for divergences with current pivot
+if not na(plFound) and array.size(pivotLows) >= 2
+    currentLowPrice = low[lbR]
+    currentLowRSI = osc[lbR]
+    currentBar = bar_index - lbR
+    
+    // Look for divergences with previous pivots
+    for i = 0 to array.size(pivotLows) - 2
+        prevLowPrice = array.get(pivotLows, i)
+        prevLowRSI = array.get(pivotLowsRSI, i)
+        prevBar = array.get(pivotLowsBars, i)
+        
+        if inRange(currentBar - prevBar)
+            // Regular Bullish Divergence (PD) - Lower Low in Price, Higher Low in RSI
+            if plotBull and currentLowPrice < prevLowPrice and currentLowRSI > prevLowRSI
+                // Draw RSI line
+                line.new(prevBar, prevLowRSI, currentBar, currentLowRSI, 
+                         color=color.green, style=line.style_solid, width=2)
+                
+                // Draw price reference line (scaled to RSI range)
+                if showPriceLines
+                    priceLineY1 = 20 + (prevLowPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    priceLineY2 = 20 + (currentLowPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    line.new(prevBar, priceLineY1, currentBar, priceLineY2, 
+                             color=color.new(color.green, 70), style=line.style_solid, width=1)
+                
+                if showRSIValues
+                    label.new(currentBar, currentLowRSI, 
+                             text="PD\n" + str.tostring(math.round(currentLowRSI, 1)), 
+                             style=label.style_label_up, color=color.green, 
+                             textcolor=color.white, size=size.small)
+                break
+            
+            // Hidden Bullish Divergence (PRD) - Higher Low in Price, Lower Low in RSI
+            if plotHiddenBull and currentLowPrice > prevLowPrice and currentLowRSI < prevLowRSI
+                // Draw RSI line
+                line.new(prevBar, prevLowRSI, currentBar, currentLowRSI, 
+                         color=color.green, style=line.style_dotted, width=2)
+                
+                // Draw price reference line
+                if showPriceLines
+                    priceLineY1 = 20 + (prevLowPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    priceLineY2 = 20 + (currentLowPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    line.new(prevBar, priceLineY1, currentBar, priceLineY2, 
+                             color=color.new(color.green, 70), style=line.style_dotted, width=1)
+                
+                if showRSIValues
+                    label.new(currentBar, currentLowRSI, 
+                             text="PRD\n" + str.tostring(math.round(currentLowRSI, 1)), 
+                             style=label.style_label_up, color=color.new(color.green, 50), 
+                             textcolor=color.white, size=size.small)
+                break
+
+// Check for bearish divergences
+if not na(phFound) and array.size(pivotHighs) >= 2
+    currentHighPrice = high[lbR]
+    currentHighRSI = osc[lbR]
+    currentBar = bar_index - lbR
+    
+    // Look for divergences with previous pivots
+    for i = 0 to array.size(pivotHighs) - 2
+        prevHighPrice = array.get(pivotHighs, i)
+        prevHighRSI = array.get(pivotHighsRSI, i)
+        prevBar = array.get(pivotHighsBars, i)
+        
+        if inRange(currentBar - prevBar)
+            // Regular Bearish Divergence (ND) - Higher High in Price, Lower High in RSI
+            if plotBear and currentHighPrice > prevHighPrice and currentHighRSI < prevHighRSI
+                // Draw RSI line
+                line.new(prevBar, prevHighRSI, currentBar, currentHighRSI, 
+                         color=color.red, style=line.style_solid, width=2)
+                
+                // Draw price reference line
+                if showPriceLines
+                    priceLineY1 = 80 + (prevHighPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    priceLineY2 = 80 + (currentHighPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    line.new(prevBar, priceLineY1, currentBar, priceLineY2, 
+                             color=color.new(color.red, 70), style=line.style_solid, width=1)
+                
+                if showRSIValues
+                    label.new(currentBar, currentHighRSI, 
+                             text="ND\n" + str.tostring(math.round(currentHighRSI, 1)), 
+                             style=label.style_label_down, color=color.red, 
+                             textcolor=color.white, size=size.small)
+                break
+            
+            // Hidden Bearish Divergence (NRD) - Lower High in Price, Higher High in RSI
+            if plotHiddenBear and currentHighPrice < prevHighPrice and currentHighRSI > prevHighRSI
+                // Draw RSI line
+                line.new(prevBar, prevHighRSI, currentBar, currentHighRSI, 
+                         color=color.red, style=line.style_dotted, width=2)
+                
+                // Draw price reference line
+                if showPriceLines
+                    priceLineY1 = 80 + (prevHighPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    priceLineY2 = 80 + (currentHighPrice - ta.lowest(low, 100)) / (ta.highest(high, 100) - ta.lowest(low, 100)) * 10
+                    line.new(prevBar, priceLineY1, currentBar, priceLineY2, 
+                             color=color.new(color.red, 70), style=line.style_dotted, width=1)
+                
+                if showRSIValues
+                    label.new(currentBar, currentHighRSI, 
+                             text="NRD\n" + str.tostring(math.round(currentHighRSI, 1)), 
+                             style=label.style_label_down, color=color.new(color.red, 50), 
+                             textcolor=color.white, size=size.small)
+                break
+
+// Plot pivot points for reference
+plotshape(not na(plFound), title="Pivot Low", style=shape.triangleup, 
+          location=location.absolute, color=color.new(color.blue, 50), size=size.tiny, 
+          offset=-lbR)
+plotshape(not na(phFound), title="Pivot High", style=shape.triangledown, 
+          location=location.absolute, color=color.new(color.orange, 50), size=size.tiny, 
+          offset=-lbR)
+
+// Information table
+if barstate.islast
+    var infoTable = table.new(position.top_right, 2, 7, bgcolor=color.new(color.black, 80), border_width=1)
+    table.cell(infoTable, 0, 0, "RSI", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, str.tostring(math.round(osc, 2)), text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "PD (Bull)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, plotBull ? "ON" : "OFF", text_color=plotBull ? color.green : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 2, "PRD (H.Bull)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, plotHiddenBull ? "ON" : "OFF", text_color=plotHiddenBull ? color.green : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 3, "ND (Bear)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, plotBear ? "ON" : "OFF", text_color=plotBear ? color.red : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 4, "NRD (H.Bear)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 4, plotHiddenBear ? "ON" : "OFF", text_color=plotHiddenBear ? color.red : color.gray, text_size=size.small)
+    table.cell(infoTable, 0, 5, "Legend", text_color=color.yellow, text_size=size.small)
+    table.cell(infoTable, 1, 5, "Solid=Regular Dotted=Hidden", text_color=color.yellow, text_size=size.tiny)
+    table.cell(infoTable, 0, 6, "Colors", text_color=color.yellow, text_size=size.small)
+    table.cell(infoTable, 1, 6, "Green=Bull Red=Bear", text_color=color.yellow, text_size=size.tiny)
