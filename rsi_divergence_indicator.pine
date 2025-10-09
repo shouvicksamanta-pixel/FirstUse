@@ -1,0 +1,209 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © mohanee
+//@version=4
+var longPos = 0
+//nz(longPos[1],0) 
+ //persistent_variable  to initialize lonposition value
+
+study(title="RSI Divergence Indicator (with alerts)", shorttitle="RSI Divergence Indicator", overlay=false)
+
+len = input(title="RSI Period", minval=1, defval=5)
+src = input(title="RSI Source", defval=close)
+lbR = input(title="Pivot Lookback Right", defval=3)
+lbL = input(title="Pivot Lookback Left", defval=1)
+takeProfitRSILevel = input(title="Take Profit at RSI Level", minval=70, defval=75)
+
+
+
+rangeUpper = input(title="Max of Lookback Range", defval=60)
+rangeLower = input(title="Min of Lookback Range", defval=5)
+plotBull = input(title="Plot Bullish", defval=true)
+plotHiddenBull = input(title="Plot Hidden Bullish", defval=true)
+plotBear = input(title="Plot Bearish", defval=true)
+plotHiddenBear = input(title="Plot Hidden Bearish", defval=false)
+
+
+bearColor = color.purple
+bullColor = color.green
+hiddenBullColor = color.new(color.green, 80)
+hiddenBearColor = color.new(color.red, 80)
+textColor = color.white
+noneColor = color.new(color.white, 100)
+
+osc = rsi(src, len)
+
+plot(osc, title="RSI", linewidth=2, color=#8D1699)
+hline(50, title="Middle Line", linestyle=hline.style_dotted)
+obLevel = hline(70, title="Overbought", linestyle=hline.style_dotted)
+osLevel = hline(30, title="Oversold", linestyle=hline.style_dotted)
+fill(obLevel, osLevel, title="Background", color=#9915FF, transp=90)
+
+plFound = na(pivotlow(osc, lbL, lbR)) ? false : true
+phFound = na(pivothigh(osc, lbL, lbR)) ? false : true
+
+_inRange(cond) =>
+    bars = barssince(cond == true)
+    rangeLower <= bars and bars <= rangeUpper
+
+//------------------------------------------------------------------------------
+// Regular Bullish
+
+// Osc: Higher Low
+oscHL = osc[lbR] > valuewhen(plFound, osc[lbR], 1) and _inRange(plFound[1])
+
+// Price: Lower Low
+priceLL = low[lbR] < valuewhen(plFound, low[lbR], 1)
+
+bullCond = plotBull and priceLL and oscHL and plFound
+
+plot(
+	 plFound ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Regular Bullish",
+	 linewidth=2,
+	 color=(bullCond ? bullColor : noneColor),
+	 transp=0
+	 )
+
+
+plotshape(
+	 bullCond ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Regular Bullish Label",
+	 text=" PD ",
+	 style=shape.labelup,
+	 location=location.absolute,
+	 color=bullColor,
+	 textcolor=textColor,
+	 transp=0
+	 )
+
+//------------------------------------------------------------------------------
+// Hidden Bullish
+
+// Osc: Lower Low
+oscLL = osc[lbR] < valuewhen(plFound, osc[lbR], 1) and _inRange(plFound[1])
+
+// Price: Higher Low
+priceHL = low[lbR] > valuewhen(plFound, low[lbR], 1)
+
+hiddenBullCond = plotHiddenBull and priceHL and oscLL and plFound
+
+plot(
+	 plFound ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Hidden Bullish",
+	 linewidth=2,
+	 color=(hiddenBullCond ? hiddenBullColor : noneColor),
+	 transp=0
+	 )
+
+plotshape(
+	 hiddenBullCond ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Hidden Bullish Label",
+	 text=" PRD ",
+	 style=shape.labelup,
+	 location=location.absolute,
+	 color=bullColor,
+	 textcolor=textColor,
+	 transp=0
+	 )
+
+longCondition=bullCond or hiddenBullCond
+//? osc[lbR] : na  
+//hiddenBullCond
+//strategy.entry(id="RSIDivLE", long=true,  when=longCondition)
+
+
+
+alertcondition(longCondition, title="RSIDiv BUY ENTRY", message="RSIDiv BUY ENTRY")
+
+longPos:= longCondition?(longPos+1):longPos
+
+//barcolor(longCondition ?  color.yellow: na )
+//plotshape(longCondition?close:na, style=shape.arrowup,text="BUY", color=color.purple,transp=10, location=location.bottom)
+
+
+//------------------------------------------------------------------------------
+// Regular Bearish
+
+// Osc: Lower High
+oscLH = osc[lbR] < valuewhen(phFound, osc[lbR], 1) and _inRange(phFound[1])
+
+// Price: Higher High
+priceHH = high[lbR] > valuewhen(phFound, high[lbR], 1)
+
+bearCond = plotBear and priceHH and oscLH and phFound
+
+plot(
+	 phFound ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Regular Bearish",
+	 linewidth=2,
+	 color=(bearCond ? bearColor : noneColor),
+	 transp=0
+	 )
+
+plotshape(
+	 bearCond ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Regular Bearish Label",
+	 text=" ND ",
+	 style=shape.labeldown,
+	 location=location.absolute,
+	 color=bearColor,
+	 textcolor=textColor,
+	 transp=0
+	 )
+
+//------------------------------------------------------------------------------
+// Hidden Bearish
+
+// Osc: Higher High
+oscHH = osc[lbR] > valuewhen(phFound, osc[lbR], 1) and _inRange(phFound[1])
+
+// Price: Lower High
+priceLH = high[lbR] < valuewhen(phFound, high[lbR], 1)
+
+hiddenBearCond = plotHiddenBear and priceLH and oscHH and phFound
+
+plot(
+	 phFound ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Hidden Bearish",
+	 linewidth=2,
+	 color=(hiddenBearCond ? hiddenBearColor : noneColor),
+	 transp=0
+	 )
+
+plotshape(
+	 hiddenBearCond ? osc[lbR] : na,
+	 offset=-lbR,
+	 title="Hidden Bearish Label",
+	 text=" NRD ",
+	 style=shape.labeldown,
+	 location=location.absolute,
+	 color=bearColor,
+	 textcolor=textColor,
+	 transp=0
+	 )
+
+longCloseCondition=(crossover(osc,takeProfitRSILevel) or bearCond) and longPos>=1
+
+//strategy.close(id="RSIDivLE",  when=longCloseCondition)
+
+alertcondition(longCloseCondition, title="RSIDiv BUY EXIT", message="RSIDiv BUY EXIT")
+
+longPos:= longCloseCondition?(longPos-1):longPos   //reset the Buy position
+//longPos:= longCloseCondition ? (longPos-1) : longPos  
+
+//===
+//pos = longCondition==true? 1 : longCloseCondition==true ? -1 :  longPos>=1 ? 2 :  0
+
+//barcolor(pos == -1 ? color.purple: pos == 1 ? color.yellow : pos == 2 ?  color.blue:na )
+barcolor(longCondition==true ? color.yellow : longCloseCondition==true ? color.purple : longPos>=1 ? color.blue : na )
+
+//===
+//barcolor(longCloseCondition==true ? color.purple : na, offset=0)
+//plotshape(longCloseCondition and longPos>=1 ?close:na, style=shape.arrowdown,text="CLOSE", color=color.purple,transp=10, location=location.abovebar)
