@@ -1,0 +1,163 @@
+//@version=6
+strategy("RSI Oversold Reversal Strategy", overlay=true, max_labels_count=500, max_lines_count=500, 
+         default_qty_type=strategy.percent_of_equity, default_qty_value=100, commission_type=strategy.commission.percent, commission_value=0.1)
+
+// Input parameters
+rsi_length = input.int(25, title="RSI Length", minval=1)
+rsi_oversold = input.int(30, title="RSI Oversold Level", minval=1, maxval=50)
+lookback_bars = input.int(4, title="Lookback Bars for Green Candle", minval=1, maxval=10)
+risk_reward_ratio = input.float(2.0, title="Risk-Reward Ratio", minval=1.0, maxval=5.0)
+
+// Backtesting date range
+start_date = input.time(timestamp("01 Jan 2020 00:00 +0000"), title="Start Date")
+end_date = input.time(timestamp("31 Dec 2024 23:59 +0000"), title="End Date")
+in_date_range = time >= start_date and time <= end_date
+
+// Calculate RSI
+rsi = ta.rsi(close, rsi_length)
+
+// Define candle colors
+is_red_candle = close < open
+is_green_candle = close > open
+
+// Track trade state
+var bool trade_setup_found = false
+var float base_candle_low = na
+var float green_candle_high = na
+var string exit_reason = ""
+var label setup_label = na
+var line sl_line = na
+var line target_line = na
+
+// Function to find green candle in lookback period
+find_green_candle_in_lookback(lookback_period) =>
+    found = false
+    green_candle_high = 0.0
+    for i = 1 to lookback_period
+        if is_green_candle[i]
+            found := true
+            green_candle_high := high[i]
+            break
+    [found, green_candle_high]
+
+// Call function on each bar for consistency
+[found_green_candle, green_candle_found_high] = find_green_candle_in_lookback(lookback_bars)
+
+// Reset setup when new trade starts
+if strategy.position_size == 0
+    trade_setup_found := false
+    base_candle_low := na
+    green_candle_high := na
+
+// Main strategy logic - Look for setup
+if strategy.position_size == 0 and in_date_range and not trade_setup_found
+    // Check if current candle meets base criteria (Red candle + RSI oversold)
+    if is_red_candle and rsi < rsi_oversold
+        // Use the green candle data calculated above
+        if found_green_candle
+            trade_setup_found := true
+            base_candle_low := low  // Store the low of the red base candle
+            green_candle_high := green_candle_found_high
+            
+            // Create setup label
+            setup_label := label.new(bar_index, low, "SETUP\nRSI: " + str.tostring(rsi, "#.#") + "\nGreen High: " + str.tostring(green_candle_found_high, "#.##"), 
+                                   color=color.orange, style=label.style_label_up, textcolor=color.white, size=size.small)
+
+// Entry logic - Buy when any candle closes above the green candle high
+if trade_setup_found and strategy.position_size == 0 and in_date_range
+    if close > green_candle_high
+        // Calculate stop loss and target
+        entry_price = close
+        stop_loss_price = base_candle_low
+        risk_amount = entry_price - stop_loss_price
+        target_price = entry_price + (risk_amount * risk_reward_ratio)
+        
+        // Enter long position
+        strategy.entry("Long", strategy.long, comment="BUY RSI Rev")
+        
+        // Set stop loss and take profit
+        strategy.exit("Exit Long", "Long", stop=stop_loss_price, limit=target_price, comment_loss="SL Hit", comment_profit="Target Hit")
+        
+        // Create entry label
+        label.new(bar_index, low, "BUY\nEntry: " + str.tostring(entry_price, "#.##") + "\nSL: " + str.tostring(stop_loss_price, "#.##") + "\nTarget: " + str.tostring(target_price, "#.##"), 
+                  color=color.green, style=label.style_label_up, textcolor=color.white, size=size.small)
+        
+        // Create stop loss line
+        sl_line := line.new(bar_index, stop_loss_price, bar_index + 20, stop_loss_price, 
+                          color=color.red, style=line.style_dashed, width=2)
+        
+        // Create target line
+        target_line := line.new(bar_index, target_price, bar_index + 20, target_price, 
+                              color=color.green, style=line.style_dashed, width=2)
+        
+        // Reset setup variables
+        trade_setup_found := false
+
+// Update line endpoints when trade is closed
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    if not na(sl_line)
+        line.set_x2(sl_line, bar_index)
+    if not na(target_line)
+        line.set_x2(target_line, bar_index)
+    
+    // Determine exit reason
+    if strategy.closedtrades > 0
+        last_exit_price = strategy.closedtrades.exit_price(strategy.closedtrades - 1)
+        last_entry_price = strategy.closedtrades.entry_price(strategy.closedtrades - 1)
+        exit_reason := last_exit_price > last_entry_price ? "TARGET HIT" : "STOP LOSS"
+    else
+        exit_reason := "CLOSED"
+    
+    // Create exit label
+    label.new(bar_index, high, "SELL\n" + exit_reason + "\nP&L: " + str.tostring(strategy.netprofit, "#.##"), 
+              color=color.red, style=label.style_label_down, textcolor=color.white, size=size.small)
+
+// Plot RSI in separate pane
+rsi_plot = plot(rsi, "RSI", color=color.blue)
+hline(rsi_oversold, "RSI Oversold", color=color.red, linestyle=hline.style_dashed)
+hline(70, "RSI Overbought", color=color.red, linestyle=hline.style_dashed)
+hline(50, "RSI Midline", color=color.gray, linestyle=hline.style_dotted)
+
+// Fill oversold area
+oversold_fill = hline(0, "RSI Zero", color=color.new(color.white, 100))
+fill(oversold_fill, hline(rsi_oversold), color=color.new(color.red, 90), title="Oversold Zone")
+
+// Plot buy signals
+plotshape(strategy.position_size > 0 and strategy.position_size[1] == 0, title="Buy Signal", 
+          location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal)
+
+// Color bars based on trade status
+barcolor(strategy.position_size != 0 ? color.yellow : na, title="In Trade")
+
+// Strategy Statistics Table
+var table stats_table = table.new(position.top_right, 2, 8, bgcolor=color.white, border_width=1)
+
+if barstate.islast
+    table.cell(stats_table, 0, 0, "Strategy Stats", text_color=color.white, bgcolor=color.blue)
+    table.cell(stats_table, 1, 0, "Value", text_color=color.white, bgcolor=color.blue)
+    
+    table.cell(stats_table, 0, 1, "Total Trades", text_color=color.black)
+    table.cell(stats_table, 1, 1, str.tostring(strategy.closedtrades), text_color=color.black)
+    
+    table.cell(stats_table, 0, 2, "Win Rate %", text_color=color.black)
+    win_rate = strategy.closedtrades > 0 ? (strategy.wintrades / strategy.closedtrades) * 100 : 0
+    table.cell(stats_table, 1, 2, str.tostring(win_rate, "#.#") + "%", text_color=color.black)
+    
+    table.cell(stats_table, 0, 3, "Net Profit", text_color=color.black)
+    table.cell(stats_table, 1, 3, str.tostring(strategy.netprofit, "#.##"), text_color=strategy.netprofit > 0 ? color.green : color.red)
+    
+    table.cell(stats_table, 0, 4, "Profit Factor", text_color=color.black)
+    table.cell(stats_table, 1, 4, str.tostring(strategy.grossprofit / math.max(strategy.grossloss, 1), "#.##"), text_color=color.black)
+    
+    table.cell(stats_table, 0, 5, "Max Drawdown", text_color=color.black)
+    table.cell(stats_table, 1, 5, str.tostring(strategy.max_drawdown, "#.##"), text_color=color.red)
+    
+    table.cell(stats_table, 0, 6, "Current RSI", text_color=color.black)
+    table.cell(stats_table, 1, 6, str.tostring(rsi, "#.#"), text_color=rsi < rsi_oversold ? color.red : color.black)
+    
+    table.cell(stats_table, 0, 7, "Position", text_color=color.black)
+    table.cell(stats_table, 1, 7, strategy.position_size != 0 ? "LONG" : "FLAT", text_color=strategy.position_size != 0 ? color.green : color.gray)
+
+// Alert conditions
+alertcondition(strategy.position_size > 0 and strategy.position_size[1] == 0, title="Entry Alert", message="RSI Oversold Reversal - Long Entry")
+alertcondition(strategy.position_size == 0 and strategy.position_size[1] > 0, title="Exit Alert", message="RSI Oversold Reversal - Position Closed")
